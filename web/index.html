@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rust DB Client</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        h1 { color: #333; }
+        h2 { color: #555; margin-top: 30px; }
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+        .status.connected { background: #d4edda; color: #155724; }
+        .status.disconnected { background: #f8d7da; color: #721c24; }
+        label { display: block; margin-bottom: 5px; font-weight: 500; }
+        input, select {
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        button:hover { background: #0056b3; }
+        button.secondary { background: #6c757d; }
+        button.secondary:hover { background: #545b62; }
+        button.danger { background: #dc3545; }
+        button.danger:hover { background: #c82333; }
+        .columns-container { margin-bottom: 10px; }
+        .column-row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 5px;
+        }
+        .column-row input { flex: 2; }
+        .column-row select { flex: 1; }
+        .column-row button { flex: 0; padding: 8px 12px; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 10px;
+            text-align: left;
+        }
+        th { background: #f8f9fa; }
+        tr:nth-child(even) { background: #f8f9fa; }
+        .error { color: #dc3545; margin-top: 10px; }
+        .success { color: #28a745; margin-top: 10px; }
+        #results { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <h1>Rust DB Client</h1>
+
+    <div id="connectionStatus" class="status disconnected">Disconnected</div>
+
+    <div class="card">
+        <h2>Create Table</h2>
+        <label>Table Name</label>
+        <input type="text" id="createTableName" placeholder="users">
+
+        <label>Columns</label>
+        <div id="columnsContainer" class="columns-container">
+            <div class="column-row">
+                <input type="text" placeholder="Column name" class="col-name">
+                <select class="col-type">
+                    <option value="int">Int</option>
+                    <option value="text">Text</option>
+                    <option value="bool">Bool</option>
+                </select>
+                <button class="danger" onclick="removeColumn(this)">X</button>
+            </div>
+        </div>
+        <button class="secondary" onclick="addColumn()">+ Add Column</button>
+        <button onclick="createTable()">Create Table</button>
+        <div id="createResult"></div>
+    </div>
+
+    <div class="card">
+        <h2>Insert Row</h2>
+        <label>Table Name</label>
+        <input type="text" id="insertTableName" placeholder="users">
+
+        <label>Values (comma-separated, use true/false for bools)</label>
+        <input type="text" id="insertValues" placeholder="1, John Doe, true">
+
+        <button onclick="insertRow()">Insert Row</button>
+        <div id="insertResult"></div>
+    </div>
+
+    <div class="card">
+        <h2>Update Row</h2>
+        <label>Table Name</label>
+        <input type="text" id="updateTableName" placeholder="users">
+
+        <label>Row ID</label>
+        <input type="number" id="updateRowId" placeholder="1">
+
+        <label>Updates (column=value, comma-separated)</label>
+        <input type="text" id="updateValues" placeholder="name=Jane Doe, active=false">
+
+        <button onclick="updateRow()">Update Row</button>
+        <div id="updateResult"></div>
+    </div>
+
+    <div class="card">
+        <h2>Select All</h2>
+        <label>Table Name</label>
+        <input type="text" id="selectTableName" placeholder="users">
+
+        <button onclick="selectAll()">Select All</button>
+        <div id="selectResult"></div>
+        <div id="results"></div>
+    </div>
+
+    <script src="client.js"></script>
+</body>
+</html>
