@@ -1,1 +1,1 @@
-tesing creating an in memory db with rust (not really useful it's just to learn from) 
+testing creating an in memory db with rust (not really useful it's just to learn from) 

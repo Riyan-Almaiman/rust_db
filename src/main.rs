@@ -1,81 +1,48 @@
-
 use anyhow::Result;
 use tokio::{io::AsyncReadExt, io::AsyncWriteExt, net::TcpListener, sync::mpsc, sync::oneshot};
 
+mod client;
+mod config;
 mod db;
+mod db_types;
 mod protocol;
-mod web;
+mod commands;
+use crate::db::Database;
 
-use crate::db::{Database, DbResult};
-use crate::web::WebCommand;
-
-enum Command {
-    Tcp {
-        data: Vec<u8>,
-        respond_to: oneshot::Sender<Vec<u8>>,
-    },
-    Web(WebCommand),
+struct Command {
+    data: Vec<u8>,
+    respond_to: oneshot::Sender<Vec<u8>>,
 }
+
+const ADDRESS: &str = concat!("0.0.0.0", ":",  "8080");
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let (tx, mut rx) = mpsc::channel::<Command>(1024);
-
-    // Channel for web commands
-    let (web_tx, mut web_rx) = mpsc::channel::<WebCommand>(1024);
-
-    // Forward web commands to main channel
-    let tx_for_web = tx.clone();
-    tokio::spawn(async move {
-        while let Some(cmd) = web_rx.recv().await {
-            let _ = tx_for_web.send(Command::Web(cmd)).await;
-        }
-    });
-
-    // Start web server
-    let web_router = web::create_router(web_tx);
-    tokio::spawn(async move {
-        let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
-        println!("Web UI at http://localhost:3000");
-        axum::serve(listener, web_router).await.unwrap();
-    });
+tokio::spawn(client::run());
+        let (tx, mut rx) = mpsc::channel::<Command>(1024);
 
     // Database logic loop
-    let _db_handle = tokio::spawn(async move {
-        println!("Logic loop started");
-
+    tokio::spawn(async move {
         let mut db = Database::default();
 
-
         while let Some(cmd) = rx.recv().await {
-       
-            match cmd {
-                Command::Tcp { data, respond_to } => {
-                    let response = match protocol::parse_command(&data) {
-                        Ok(db_cmd) => match db.execute(db_cmd) {
-                            Ok(DbResult::Ok) => protocol::encode_ok(),
-                            Ok(DbResult::Rows { columns, rows }) => {
-                                protocol::encode_rows(&columns, &rows)
-                            }
-                            Err(e) => protocol::encode_error(&e),
-                        },
-                        Err(e) => protocol::encode_error(&format!("Protocol error: {}", e)),
-                    };
-                    let _ = respond_to.send(response);
-                }
-                Command::Web(WebCommand { cmd: db_cmd, respond_to }) => {
-                    let result = db.execute(db_cmd);
-                    let _ = respond_to.send(result);
-                }
-            }
+            let response = match protocol::parse_command(&cmd.data) {
+                Ok(db_cmd) => match db.execute(db_cmd) {
+                    Ok(result) => protocol::encode_result(&result),
+                    Err(e) => protocol::encode_error(&e),
+                },
+                Err(e) => protocol::encode_error(&format!("Protocol error: {}", e)),
+            };
+            let _ = cmd.respond_to.send(response);
         }
     });
 
-    let listener = TcpListener::bind("0.0.0.0:8080").await?;
-    println!("TCP server on port 8080");
+    let listener = TcpListener::bind(ADDRESS).await?;
+    println!("Database server on {}", ADDRESS);
 
     loop {
-        let (mut socket, _) = listener.accept().await?;
+let (mut socket, addr) = listener.accept().await?;
+println!("Client connected: {}", addr);
         let tx = tx.clone();
 
         tokio::spawn(async move {
@@ -84,24 +51,25 @@ async fn main() -> Result<()> {
                     Ok(Some(f)) => f,
                     Ok(None) => break,
                     Err(e) => {
-                        eprintln!("TCP client error: {}", e);
+                        eprintln!("Client {} error: {}", addr, e);
                         break;
                     }
                 };
 
                 let (resp_tx, resp_rx) = oneshot::channel();
 
-                if tx.send(Command::Tcp { data: frame, respond_to: resp_tx }).await.is_err() {
+                if tx.send(Command { data: frame, respond_to: resp_tx }).await.is_err() {
                     break;
                 }
 
                 if let Ok(response) = resp_rx.await {
                     if let Err(e) = write_frame(&mut socket, &response).await {
-                        eprintln!("TCP write error: {}", e);
+                        eprintln!("Client {} write error: {}", addr, e);
                         break;
                     }
                 }
             }
+            println!("Client disconnected: {}", addr);
         });
     }
 }

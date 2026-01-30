@@ -13,22 +13,42 @@
             padding: 20px;
             background: #f5f5f5;
         }
-        h1 { color: #333; }
-        h2 { color: #555; margin-top: 30px; }
-        .card {
-            background: white;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
+        h1 { color: #333; margin-bottom: 10px; }
         .status {
-            padding: 10px;
+            padding: 8px 12px;
             border-radius: 4px;
             margin-bottom: 20px;
+            display: inline-block;
         }
         .status.connected { background: #d4edda; color: #155724; }
         .status.disconnected { background: #f8d7da; color: #721c24; }
+
+        .tabs {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 0;
+        }
+        .tab {
+            padding: 10px 20px;
+            background: #6c757d;
+            color: white;
+            border: none;
+            border-radius: 8px 8px 0 0;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .tab:hover { background: #5a6268; }
+        .tab.active { background: white; color: #333; font-weight: 500; }
+
+        .panel {
+            display: none;
+            background: white;
+            border-radius: 0 8px 8px 8px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .panel.active { display: block; }
+
         label { display: block; margin-bottom: 5px; font-weight: 500; }
         input, select {
             width: 100%;
@@ -50,17 +70,20 @@
         button:hover { background: #0056b3; }
         button.secondary { background: #6c757d; }
         button.secondary:hover { background: #545b62; }
-        button.danger { background: #dc3545; }
+        button.danger { background: #dc3545; padding: 8px 12px; }
         button.danger:hover { background: #c82333; }
-        .columns-container { margin-bottom: 10px; }
+
         .column-row {
             display: flex;
             gap: 10px;
-            margin-bottom: 5px;
+            margin-bottom: 8px;
+            align-items: center;
         }
-        .column-row input { flex: 2; }
-        .column-row select { flex: 1; }
-        .column-row button { flex: 0; padding: 8px 12px; }
+        .column-row input { flex: 2; margin-bottom: 0; }
+        .column-row input[type="checkbox"] { flex: 0; width: auto; }
+        .column-row select { flex: 1; margin-bottom: 0; }
+        .column-row label { flex: 1; margin-bottom: 0; }
+
         table {
             width: 100%;
             border-collapse: collapse;
@@ -79,17 +102,22 @@
     </style>
 </head>
 <body>
-    <h1>Rust DB Client</h1>
-
+    <h1>Rust DB</h1>
     <div id="connectionStatus" class="status disconnected">Disconnected</div>
 
-    <div class="card">
-        <h2>Create Table</h2>
+    <div class="tabs">
+        <button class="tab active" onclick="showTab('create')">Create Table</button>
+        <button class="tab" onclick="showTab('insert')">Insert</button>
+        <button class="tab" onclick="showTab('update')">Update</button>
+        <button class="tab" onclick="showTab('select')">Select</button>
+    </div>
+
+    <div id="create" class="panel active">
         <label>Table Name</label>
         <input type="text" id="createTableName" placeholder="users">
 
         <label>Columns</label>
-        <div id="columnsContainer" class="columns-container">
+        <div id="columnsContainer">
             <div class="column-row">
                 <input type="text" placeholder="Column name" class="col-name">
                 <select class="col-type">
@@ -105,37 +133,38 @@
         <div id="createResult"></div>
     </div>
 
-    <div class="card">
-        <h2>Insert Row</h2>
-        <label>Table Name</label>
-        <input type="text" id="insertTableName" placeholder="users">
+    <div id="insert" class="panel">
+        <label>Table</label>
+        <select id="insertTableName" class="table-select" onchange="showInsertColumns()">
+            <option value="">Select table...</option>
+        </select>
 
-        <label>Values (comma-separated, use true/false for bools)</label>
-        <input type="text" id="insertValues" placeholder="1, John Doe, true">
+        <div id="insertColumns"></div>
 
         <button onclick="insertRow()">Insert Row</button>
         <div id="insertResult"></div>
     </div>
 
-    <div class="card">
-        <h2>Update Row</h2>
-        <label>Table Name</label>
-        <input type="text" id="updateTableName" placeholder="users">
+    <div id="update" class="panel">
+        <label>Table</label>
+        <select id="updateTableName" class="table-select" onchange="showUpdateColumns()">
+            <option value="">Select table...</option>
+        </select>
 
         <label>Row ID</label>
         <input type="number" id="updateRowId" placeholder="1">
 
-        <label>Updates (column=value, comma-separated)</label>
-        <input type="text" id="updateValues" placeholder="name=Jane Doe, active=false">
+        <div id="updateColumns"></div>
 
         <button onclick="updateRow()">Update Row</button>
         <div id="updateResult"></div>
     </div>
 
-    <div class="card">
-        <h2>Select All</h2>
-        <label>Table Name</label>
-        <input type="text" id="selectTableName" placeholder="users">
+    <div id="select" class="panel">
+        <label>Table</label>
+        <select id="selectTableName" class="table-select">
+            <option value="">Select table...</option>
+        </select>
 
         <button onclick="selectAll()">Select All</button>
         <div id="selectResult"></div>
@@ -143,5 +172,13 @@
     </div>
 
     <script src="client.js"></script>
+    <script>
+        function showTab(name) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+            document.querySelector(`[onclick="showTab('${name}')"]`).classList.add('active');
+            document.getElementById(name).classList.add('active');
+        }
+    </script>
 </body>
 </html>

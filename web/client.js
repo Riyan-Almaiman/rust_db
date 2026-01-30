@@ -12,6 +12,7 @@ class DbClient {
         this.ws.onopen = () => {
             document.getElementById('connectionStatus').className = 'status connected';
             document.getElementById('connectionStatus').textContent = 'Connected';
+            refreshTables();
         };
 
         this.ws.onclose = () => {
@@ -35,7 +36,7 @@ class DbClient {
             this.ws.send(JSON.stringify(cmd));
         });
     }
-
+    
     createTable(table, columns) {
         return this.send({ type: 'createTable', table, columns });
     }
@@ -51,9 +52,99 @@ class DbClient {
     selectAll(table) {
         return this.send({ type: 'selectAll', table });
     }
+
+    getTables() {
+        return this.send({ type: 'getTables' });
+    }
 }
 
 const client = new DbClient();
+
+// Store table schemas: { tableName: [{name, type}, ...] }
+let tableSchemas = {};
+
+async function refreshTables() {
+    const result = await client.getTables();
+    if (!result.ok) return;
+
+    // Parse rows into schema map
+    tableSchemas = {};
+    for (const row of result.rows) {
+        const tableName = row.table_name;
+        if (!tableSchemas[tableName]) {
+            tableSchemas[tableName] = [];
+        }
+        tableSchemas[tableName].push({
+            name: row.column_name,
+            type: row.column_type
+        });
+    }
+
+    // Update all table selects
+    const tableNames = Object.keys(tableSchemas);
+    const selects = document.querySelectorAll('.table-select');
+
+    for (const select of selects) {
+        const current = select.value;
+        select.innerHTML = '<option value="">Select table...</option>';
+        for (const table of tableNames) {
+            const opt = document.createElement('option');
+            opt.value = table;
+            opt.textContent = table;
+            select.appendChild(opt);
+        }
+        if (tableNames.includes(current)) {
+            select.value = current;
+        }
+    }
+}
+
+function getTableSchema(tableName) {
+    return tableSchemas[tableName] || [];
+}
+
+function showInsertColumns() {
+    const tableName = document.getElementById('insertTableName').value;
+    const container = document.getElementById('insertColumns');
+    const schema = getTableSchema(tableName);
+
+    if (!schema.length) {
+        container.innerHTML = '';
+        return;
+    }
+
+    let html = '';
+    for (const col of schema) {
+        const inputType = col.type === 'bool' ? 'checkbox' : (col.type === 'int' ? 'number' : 'text');
+        html += `<div class="column-row">
+            <label style="flex:1">${escapeHtml(col.name)} (${col.type})</label>
+            <input type="${inputType}" class="insert-value" data-type="${col.type}" style="flex:2">
+        </div>`;
+    }
+    container.innerHTML = html;
+}
+
+function showUpdateColumns() {
+    const tableName = document.getElementById('updateTableName').value;
+    const container = document.getElementById('updateColumns');
+    const schema = getTableSchema(tableName);
+
+    if (!schema.length) {
+        container.innerHTML = '';
+        return;
+    }
+
+    let html = '';
+    for (const col of schema) {
+        const inputType = col.type === 'bool' ? 'checkbox' : (col.type === 'int' ? 'number' : 'text');
+        html += `<div class="column-row">
+            <input type="checkbox" class="update-check" style="flex:0;width:auto">
+            <label style="flex:1">${escapeHtml(col.name)} (${col.type})</label>
+            <input type="${inputType}" class="update-value" data-col="${col.name}" data-type="${col.type}" style="flex:2">
+        </div>`;
+    }
+    container.innerHTML = html;
+}
 
 function addColumn() {
     const container = document.getElementById('columnsContainer');
@@ -113,6 +204,9 @@ async function createTable() {
 
     const result = await client.createTable(tableName, columns);
     showResult('createResult', result);
+    if (result.ok) {
+        refreshTables();
+    }
 }
 
 function parseValue(str) {
@@ -124,35 +218,61 @@ function parseValue(str) {
 }
 
 async function insertRow() {
-    const tableName = document.getElementById('insertTableName').value.trim();
-    const valuesStr = document.getElementById('insertValues').value.trim();
+    const tableName = document.getElementById('insertTableName').value;
 
     if (!tableName) {
-        showResult('insertResult', { ok: false, error: 'Table name required' });
+        showResult('insertResult', { ok: false, error: 'Table required' });
         return;
     }
 
-    const values = valuesStr.split(',').map(parseValue);
+    const inputs = document.querySelectorAll('#insertColumns .insert-value');
+    const values = [];
+    for (const input of inputs) {
+        const type = input.dataset.type;
+        if (type === 'bool') {
+            values.push(input.checked);
+        } else if (type === 'int') {
+            values.push(parseInt(input.value) || 0);
+        } else {
+            values.push(input.value);
+        }
+    }
+
     const result = await client.insert(tableName, values);
     showResult('insertResult', result);
 }
 
 async function updateRow() {
-    const tableName = document.getElementById('updateTableName').value.trim();
+    const tableName = document.getElementById('updateTableName').value;
     const rowId = parseInt(document.getElementById('updateRowId').value);
-    const updatesStr = document.getElementById('updateValues').value.trim();
 
     if (!tableName || isNaN(rowId)) {
-        showResult('updateResult', { ok: false, error: 'Table name and row ID required' });
+        showResult('updateResult', { ok: false, error: 'Table and row ID required' });
         return;
     }
 
+    const rows = document.querySelectorAll('#updateColumns .column-row');
     const updates = {};
-    for (const pair of updatesStr.split(',')) {
-        const [col, val] = pair.split('=').map(s => s.trim());
-        if (col && val !== undefined) {
-            updates[col] = parseValue(val);
+    for (const row of rows) {
+        const check = row.querySelector('.update-check');
+        if (!check.checked) continue;
+
+        const input = row.querySelector('.update-value');
+        const col = input.dataset.col;
+        const type = input.dataset.type;
+
+        if (type === 'bool') {
+            updates[col] = input.checked;
+        } else if (type === 'int') {
+            updates[col] = parseInt(input.value) || 0;
+        } else {
+            updates[col] = input.value;
         }
+    }
+
+    if (Object.keys(updates).length === 0) {
+        showResult('updateResult', { ok: false, error: 'Select at least one column to update' });
+        return;
     }
 
     const result = await client.update(tableName, rowId, updates);
@@ -160,7 +280,7 @@ async function updateRow() {
 }
 
 async function selectAll() {
-    const tableName = document.getElementById('selectTableName').value.trim();
+    const tableName = document.getElementById('selectTableName').value;
 
     if (!tableName) {
         showResult('selectResult', { ok: false, error: 'Table name required' });
