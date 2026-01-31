@@ -4,14 +4,12 @@ use axum::{
     routing::get,
     Router,
 };
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tower_http::services::ServeDir;
 
 use crate::config::{CLIENT_ADDRESS, CLIENT_SERVER, DB_ADDRESS};
-use crate::db_types::{ Value};
-use crate::commands::DbCommand;
-use crate::commands::DbResult;
+use crate::db_types::Value;
+use crate::commands::{DbCommand, DbResult};
 use crate::protocol;
 
 pub async fn run() {
@@ -51,14 +49,18 @@ async fn handle_socket(mut socket: WebSocket) {
         };
 
         let binary = protocol::encode_command(&db_cmd);
-        if let Err(e) = send_frame(&mut tcp, &binary).await {
+        if let Err(e) = protocol::write_frame(&mut tcp, &binary).await {
             let _ = send_error(&mut socket, format!("TCP send error: {}", e)).await;
             return;
         }
 
         // Read and decode response
-        let response_bytes = match read_frame(&mut tcp).await {
-            Ok(b) => b,
+        let response_bytes = match protocol::read_frame(&mut tcp).await {
+            Ok(Some(b)) => b,
+            Ok(None) => {
+                let _ = send_error(&mut socket, "Connection closed".into()).await;
+                return;
+            }
             Err(e) => {
                 let _ = send_error(&mut socket, format!("TCP read error: {}", e)).await;
                 return;
@@ -110,26 +112,7 @@ fn value_to_json(v: &Value) -> serde_json::Value {
     }
 }
 
-// === Helpers ===
-
 async fn send_error(socket: &mut WebSocket, error: String) -> Result<(), axum::Error> {
     let json = serde_json::json!({"ok": false, "error": error});
     socket.send(Message::Text(json.to_string().into())).await
-}
-
-async fn send_frame(tcp: &mut TcpStream, data: &[u8]) -> std::io::Result<()> {
-    let len = (data.len() as u32).to_be_bytes();
-    tcp.write_all(&len).await?;
-    tcp.write_all(data).await?;
-    Ok(())
-}
-
-async fn read_frame(tcp: &mut TcpStream) -> std::io::Result<Vec<u8>> {
-    let mut len_buf = [0u8; 4];
-    tcp.read_exact(&mut len_buf).await?;
-    let len = u32::from_be_bytes(len_buf) as usize;
-
-    let mut data = vec![0u8; len];
-    tcp.read_exact(&mut data).await?;
-    Ok(data)
 }

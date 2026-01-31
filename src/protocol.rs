@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
 use crate::db_types::{Column, ColumnType, Value};
 use crate::commands::{DbCommand, DbResult};
 // Command opcodes
@@ -305,4 +307,31 @@ fn encode_value(buf: &mut Vec<u8>, v: &Value) {
             buf.push(if *b { 1 } else { 0 });
         }
     }
+}
+
+
+pub async fn read_frame(stream: &mut TcpStream) -> std::io::Result<Option<Vec<u8>>> {
+    let mut len_buf = [0u8; 4];
+
+    if stream.read_exact(&mut len_buf).await.is_err() {
+        return Ok(None);
+    }
+
+    let len = u32::from_be_bytes(len_buf) as usize;
+
+    if len > 1024 * 1024 {
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Frame too large"));
+    }
+
+    let mut data = vec![0u8; len];
+    stream.read_exact(&mut data).await?;
+
+    Ok(Some(data))
+}
+
+pub async fn write_frame(stream: &mut TcpStream, data: &[u8]) -> std::io::Result<()> {
+    let len = (data.len() as u32).to_be_bytes();
+    stream.write_all(&len).await?;
+    stream.write_all(data).await?;
+    Ok(())
 }
